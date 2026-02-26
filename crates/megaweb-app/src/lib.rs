@@ -1,6 +1,7 @@
 pub mod components;
 pub mod pages;
 pub mod state;
+pub mod storage;
 
 use leptos::prelude::*;
 use leptos_meta::*;
@@ -20,6 +21,13 @@ use components::sidebar::Sidebar;
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+
+    // Provide global state contexts
+    state::query::provide_query_state();
+    state::schema::provide_schema_state();
+    state::k8s::provide_k8s_state();
+    state::connection::provide_connection_state();
+    state::settings::provide_settings_state();
 
     view! {
         <Stylesheet id="app-styles" href="/style/main.css" />

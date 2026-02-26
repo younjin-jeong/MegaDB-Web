@@ -1,9 +1,11 @@
 use leptos::prelude::*;
-use megaweb_types::query::QueryResult;
+use megaweb_types::query::{QueryHistoryEntry, QueryResult};
 
 use crate::components::codemirror::CodeMirrorEditor;
+use crate::components::query_history::QueryHistoryPanel;
 use crate::components::result_table::ResultTable;
 use crate::components::tab_bar::{Tab, TabBar};
+use crate::state::query::use_query_state;
 
 /// Server function to execute SQL against MegaDB.
 /// In Phase 1, returns mock data. Will proxy to MegaDB HTTP API later.
@@ -11,7 +13,6 @@ use crate::components::tab_bar::{Tab, TabBar};
 async fn mock_execute_query(sql: &str) -> QueryResult {
     use megaweb_types::query::QueryColumn;
 
-    // Simulate execution delay
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     if sql.trim().is_empty() {
@@ -24,7 +25,6 @@ async fn mock_execute_query(sql: &str) -> QueryResult {
         };
     }
 
-    // Return mock CUR-like data
     QueryResult {
         columns: vec![
             QueryColumn {
@@ -84,29 +84,34 @@ async fn mock_execute_query(sql: &str) -> QueryResult {
 
 #[server(ExecuteQuery, "/api")]
 pub async fn execute_query(sql: String, _database: String) -> Result<QueryResult, ServerFnError> {
-    // Phase 1: return mock data
-    // Phase 4+: proxy to MegaDB HTTP API at {megadb_url}/query
     Ok(mock_execute_query(&sql).await)
 }
 
-/// SQL Editor page with multi-tab support.
+/// SQL Editor page with multi-tab support and query history.
 #[component]
 pub fn SqlEditorPage() -> impl IntoView {
-    // Tab state
-    let (tabs, set_tabs) = signal(vec![Tab {
-        id: "tab-1".to_string(),
-        title: "Query 1".to_string(),
-        closeable: true,
-    }]);
-    let (active_tab, set_active_tab) = signal(0usize);
-    let tab_count = StoredValue::new(1usize);
+    let (query_state, set_query_state) = use_query_state();
 
-    // SQL content per tab (keyed by index for simplicity)
-    let (sql_content, set_sql_content) = signal(String::new());
+    let (show_history, set_show_history) = signal(false);
 
-    // Query result
-    let (result, set_result) = signal(Option::<QueryResult>::None);
-    let (is_running, set_is_running) = signal(false);
+    // Derive tab list from global state
+    let tabs_signal = Signal::derive(move || {
+        let state = query_state.get();
+        state
+            .tabs
+            .iter()
+            .map(|t| Tab {
+                id: t.id.to_string(),
+                title: t.title.clone(),
+                closeable: state.tabs.len() > 1,
+            })
+            .collect::<Vec<_>>()
+    });
+
+    let active_signal = Signal::derive(move || query_state.get().active_tab_index);
+    let result_signal = Signal::derive(move || query_state.get().active_tab().result.clone());
+    let is_running = Signal::derive(move || query_state.get().active_tab().is_running);
+    let sql_content = Signal::derive(move || query_state.get().active_tab().sql.clone());
 
     // Execute query action
     let execute_action = Action::new(move |sql: &String| {
@@ -114,62 +119,83 @@ pub fn SqlEditorPage() -> impl IntoView {
         async move { execute_query(sql, "megadb".to_string()).await }
     });
 
-    // Update result when action completes
+    // Update result and history when action completes
     Effect::new(move || {
         if let Some(result_value) = execute_action.value().get() {
-            set_is_running.set(false);
+            let sql = query_state.get_untracked().active_tab().sql.clone();
             match result_value {
-                Ok(r) => set_result.set(Some(r)),
-                Err(e) => set_result.set(Some(QueryResult {
-                    columns: vec![],
-                    rows: vec![],
-                    row_count: 0,
-                    execution_time_ms: 0,
-                    error: Some(e.to_string()),
-                })),
+                Ok(ref r) => {
+                    let result = r.clone();
+                    let entry = QueryHistoryEntry {
+                        id: uuid::Uuid::new_v4(),
+                        sql,
+                        database: "megadb".to_string(),
+                        execution_time_ms: result.execution_time_ms,
+                        row_count: result.row_count,
+                        executed_at: chrono::Utc::now(),
+                        success: result.is_ok(),
+                    };
+                    set_query_state.update(|s| {
+                        s.active_tab_mut().result = Some(result);
+                        s.active_tab_mut().is_running = false;
+                        s.push_history(entry);
+                    });
+                }
+                Err(ref e) => {
+                    let err_msg = e.to_string();
+                    let entry = QueryHistoryEntry {
+                        id: uuid::Uuid::new_v4(),
+                        sql,
+                        database: "megadb".to_string(),
+                        execution_time_ms: 0,
+                        row_count: 0,
+                        executed_at: chrono::Utc::now(),
+                        success: false,
+                    };
+                    set_query_state.update(|s| {
+                        s.active_tab_mut().result = Some(QueryResult {
+                            columns: vec![],
+                            rows: vec![],
+                            row_count: 0,
+                            execution_time_ms: 0,
+                            error: Some(err_msg),
+                        });
+                        s.active_tab_mut().is_running = false;
+                        s.push_history(entry);
+                    });
+                }
             }
         }
     });
 
     let on_execute = Callback::new(move |sql: String| {
-        set_is_running.set(true);
+        set_query_state.update(|s| {
+            s.active_tab_mut().sql = sql.clone();
+            s.active_tab_mut().is_running = true;
+        });
         execute_action.dispatch(sql);
     });
 
     let on_tab_select = Callback::new(move |i: usize| {
-        set_active_tab.set(i);
+        set_query_state.update(|s| s.active_tab_index = i);
     });
 
     let on_tab_close = Callback::new(move |i: usize| {
-        set_tabs.update(|t| {
-            if t.len() > 1 {
-                t.remove(i);
-            }
-        });
-        set_active_tab.update(|a| {
-            let len = tabs.get_untracked().len();
-            if *a >= len {
-                *a = len.saturating_sub(1);
-            }
-        });
+        set_query_state.update(|s| s.close_tab(i));
     });
 
     let on_tab_add = Callback::new(move |_: ()| {
-        let count = tab_count.get_value() + 1;
-        tab_count.set_value(count);
-        set_tabs.update(|t| {
-            t.push(Tab {
-                id: format!("tab-{count}"),
-                title: format!("Query {count}"),
-                closeable: true,
-            });
-        });
-        set_active_tab.set(tabs.get_untracked().len() - 1);
+        set_query_state.update(|s| s.add_tab());
     });
 
-    let tabs_signal = Signal::from(tabs);
-    let active_signal = Signal::from(active_tab);
-    let result_signal = Signal::from(result);
+    let on_sql_change = Callback::new(move |s: String| {
+        set_query_state.update(|state| state.active_tab_mut().sql = s);
+    });
+
+    let on_history_restore = Callback::new(move |sql: String| {
+        set_query_state.update(|s| s.active_tab_mut().sql = sql);
+        set_show_history.set(false);
+    });
 
     view! {
         <div class="sql-editor-page">
@@ -186,7 +212,7 @@ pub fn SqlEditorPage() -> impl IntoView {
                     <CodeMirrorEditor
                         initial_content=String::new()
                         on_execute=on_execute
-                        on_change=Callback::new(move |s: String| set_sql_content.set(s))
+                        on_change=on_sql_change
                     />
                     <div class="editor-toolbar">
                         <button
@@ -196,8 +222,20 @@ pub fn SqlEditorPage() -> impl IntoView {
                         >
                             {move || if is_running.get() { "Running..." } else { "Run (Ctrl+Enter)" }}
                         </button>
+                        <button
+                            class="btn btn-secondary"
+                            on:click=move |_| set_show_history.update(|v| *v = !*v)
+                        >
+                            {move || if show_history.get() { "Hide History" } else { "History" }}
+                        </button>
                     </div>
                 </div>
+
+                <QueryHistoryPanel
+                    show=Signal::from(show_history)
+                    on_restore=on_history_restore
+                    on_close=Callback::new(move |_| set_show_history.set(false))
+                />
 
                 <div class="results-pane">
                     <ResultTable result=result_signal />

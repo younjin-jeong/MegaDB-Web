@@ -1,10 +1,17 @@
 use leptos::prelude::*;
 
-/// Settings page.
+use crate::state::settings::use_settings_state;
+
+/// Settings page with localStorage persistence.
 #[component]
 pub fn SettingsPage() -> impl IntoView {
-    let (theme, set_theme) = signal("dark".to_string());
-    let (font_size, set_font_size) = signal(14u32);
+    let (settings, set_settings) = use_settings_state();
+
+    // Persist settings whenever they change
+    Effect::new(move || {
+        let s = settings.get();
+        s.save();
+    });
 
     view! {
         <div class="settings-page">
@@ -15,8 +22,11 @@ pub fn SettingsPage() -> impl IntoView {
                 <div class="setting-item">
                     <label>"Theme"</label>
                     <select
-                        prop:value=move || theme.get()
-                        on:change=move |ev| set_theme.set(event_target_value(&ev))
+                        prop:value=move || settings.get().theme
+                        on:change=move |ev| {
+                            let val = event_target_value(&ev);
+                            set_settings.update(|s| s.theme = val);
+                        }
                     >
                         <option value="dark">"Dark"</option>
                         <option value="light">"Light"</option>
@@ -28,10 +38,10 @@ pub fn SettingsPage() -> impl IntoView {
                         type="number"
                         min="10"
                         max="24"
-                        prop:value=move || font_size.get().to_string()
+                        prop:value=move || settings.get().font_size.to_string()
                         on:input=move |ev| {
                             if let Ok(v) = event_target_value(&ev).parse::<u32>() {
-                                set_font_size.set(v);
+                                set_settings.update(|s| s.font_size = v.clamp(10, 24));
                             }
                         }
                     />
@@ -42,11 +52,27 @@ pub fn SettingsPage() -> impl IntoView {
                 <h3>"Query"</h3>
                 <div class="setting-item">
                     <label>"Default Row Limit"</label>
-                    <input type="number" value="1000" min="100" max="100000" />
+                    <input
+                        type="number"
+                        min="100"
+                        max="100000"
+                        prop:value=move || settings.get().row_limit.to_string()
+                        on:input=move |ev| {
+                            if let Ok(v) = event_target_value(&ev).parse::<u64>() {
+                                set_settings.update(|s| s.row_limit = v.clamp(100, 100_000));
+                            }
+                        }
+                    />
                 </div>
                 <div class="setting-item">
                     <label>"Auto-complete"</label>
-                    <input type="checkbox" checked />
+                    <input
+                        type="checkbox"
+                        prop:checked=move || settings.get().autocomplete
+                        on:change=move |_| {
+                            set_settings.update(|s| s.autocomplete = !s.autocomplete);
+                        }
+                    />
                 </div>
             </div>
 

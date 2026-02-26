@@ -2,6 +2,7 @@ pub mod chart;
 pub mod codemirror;
 pub mod modal;
 pub mod pod_card;
+pub mod query_history;
 pub mod query_plan;
 pub mod result_table;
 pub mod scaling_panel;

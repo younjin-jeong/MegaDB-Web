@@ -3,11 +3,26 @@ use leptos::config::LeptosOptions;
 use leptos::prelude::*;
 use leptos_axum::{generate_route_list, LeptosRoutes};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 mod config;
 mod proxy;
 mod websocket;
+
+// CodeMirror 6 importmap for CDN-based loading (no npm required).
+const IMPORTMAP: &str = r#"<script type="importmap">
+{
+  "imports": {
+    "codemirror": "https://esm.sh/codemirror@6.0.1",
+    "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
+    "@codemirror/view": "https://esm.sh/@codemirror/view@6.26.3",
+    "@codemirror/lang-sql": "https://esm.sh/@codemirror/lang-sql@6.6.4",
+    "@codemirror/theme-one-dark": "https://esm.sh/@codemirror/theme-one-dark@6.1.2"
+  }
+}
+</script>
+<script type="module" src="/js/codemirror-bridge.js"></script>"#;
 
 fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -16,6 +31,7 @@ fn shell(options: LeptosOptions) -> impl IntoView {
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <div inner_html=IMPORTMAP style="display:none" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options=options />
                 <link rel="stylesheet" href="/style/main.css" />
@@ -29,19 +45,16 @@ fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
-    // Load config
     let app_config = config::AppConfig::from_env();
     tracing::info!("Starting MegaDB Web on {}", app_config.bind_address);
     tracing::info!("MegaDB backend: {}", app_config.megadb_url);
 
-    // Leptos configuration
     let leptos_options = LeptosOptions::builder()
         .output_name("megaweb")
         .site_root("site")
@@ -56,16 +69,15 @@ async fn main() {
 
     let routes = generate_route_list(megaweb_app::App);
 
-    // CORS layer for development
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build the Axum router with Leptos routes.
-    // Router<LeptosOptions> is required for LeptosRoutes trait.
+    // Build the Axum router with static file serving + Leptos routes.
     let app: Router<LeptosOptions> = Router::default();
     let app = app
+        .nest_service("/js", ServeDir::new("js"))
         .leptos_routes(&leptos_options, routes, {
             let options = leptos_options.clone();
             move || shell(options.clone())
@@ -74,7 +86,6 @@ async fn main() {
         .layer(cors)
         .with_state(leptos_options);
 
-    // Start server
     let listener = tokio::net::TcpListener::bind(&app_config.bind_address)
         .await
         .expect("Failed to bind");

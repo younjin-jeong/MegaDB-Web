@@ -1,6 +1,9 @@
 use leptos::prelude::*;
 use megaweb_types::metrics::*;
 
+use crate::components::auto_refresh::{AutoRefreshControl, RefreshInterval};
+use crate::components::chart::{ChartConfig, ChartSeries, ChartType, SvgChart};
+
 /// Server function to get query metrics.
 #[server(GetQueryMetrics, "/api")]
 pub async fn get_query_metrics() -> Result<QueryMetrics, ServerFnError> {
@@ -36,15 +39,62 @@ pub async fn get_active_queries() -> Result<Vec<ActiveQuery>, ServerFnError> {
     ])
 }
 
+/// Server function to get mock time series data for charts.
+#[server(GetMetricsTimeSeries, "/api")]
+pub async fn get_metrics_time_series() -> Result<Vec<TimeSeries>, ServerFnError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+
+    // Generate 60 mock data points (1 per minute for last hour)
+    let qps_points: Vec<MetricPoint> = (0..60)
+        .map(|i| MetricPoint {
+            timestamp: now - (59 - i) as f64 * 60.0,
+            value: 200.0 + (i as f64 * 0.1).sin() * 50.0 + (i as f64 * 3.7 % 30.0),
+        })
+        .collect();
+
+    let latency_points: Vec<MetricPoint> = (0..60)
+        .map(|i| MetricPoint {
+            timestamp: now - (59 - i) as f64 * 60.0,
+            value: 15.0 + (i as f64 * 0.2).cos() * 10.0 + (i as f64 * 2.3 % 15.0),
+        })
+        .collect();
+
+    Ok(vec![
+        TimeSeries {
+            label: "QPS".into(),
+            points: qps_points,
+        },
+        TimeSeries {
+            label: "Avg Latency (ms)".into(),
+            points: latency_points,
+        },
+    ])
+}
+
 /// Performance Monitoring page.
 #[component]
 pub fn MonitoringPage() -> impl IntoView {
-    let metrics = Resource::new(|| (), |_| get_query_metrics());
-    let active_queries = Resource::new(|| (), |_| get_active_queries());
+    let (refresh_counter, set_refresh_counter) = signal(0u32);
+    let metrics = Resource::new(move || refresh_counter.get(), |_| get_query_metrics());
+    let active_queries = Resource::new(move || refresh_counter.get(), |_| get_active_queries());
+    let time_series = Resource::new(move || refresh_counter.get(), |_| get_metrics_time_series());
+
+    let on_refresh = Callback::new(move |_: ()| {
+        set_refresh_counter.update(|c| *c += 1);
+    });
 
     view! {
         <div class="monitoring-page">
-            <h2>"Performance Monitoring"</h2>
+            <div class="monitoring-header">
+                <h2>"Performance Monitoring"</h2>
+                <AutoRefreshControl
+                    initial_interval=RefreshInterval::Off
+                    on_refresh=on_refresh
+                />
+            </div>
 
             <Suspense fallback=|| view! { <p>"Loading metrics..."</p> }>
                 {move || {
@@ -56,6 +106,57 @@ pub fn MonitoringPage() -> impl IntoView {
                     })
                 }}
             </Suspense>
+
+            <div class="monitoring-section">
+                <h3>"Charts"</h3>
+                <Suspense fallback=|| view! { <p>"Loading charts..."</p> }>
+                    {move || {
+                        time_series.get().map(|result| {
+                            match result {
+                                Ok(series_data) => {
+                                    let qps_config = ChartConfig {
+                                        title: "Queries per Second (Last Hour)".into(),
+                                        chart_type: ChartType::Line,
+                                        series: series_data.iter()
+                                            .filter(|s| s.label == "QPS")
+                                            .map(|s| ChartSeries {
+                                                label: s.label.clone(),
+                                                color: "#7aa2f7".into(),
+                                                data: s.points.clone(),
+                                            })
+                                            .collect(),
+                                        height: 250,
+                                        y_label: "QPS".into(),
+                                    };
+
+                                    let latency_config = ChartConfig {
+                                        title: "Average Latency (Last Hour)".into(),
+                                        chart_type: ChartType::Bar,
+                                        series: series_data.iter()
+                                            .filter(|s| s.label.contains("Latency"))
+                                            .map(|s| ChartSeries {
+                                                label: s.label.clone(),
+                                                color: "#e0af68".into(),
+                                                data: s.points.clone(),
+                                            })
+                                            .collect(),
+                                        height: 250,
+                                        y_label: "ms".into(),
+                                    };
+
+                                    view! {
+                                        <div class="charts-grid">
+                                            <SvgChart config=qps_config />
+                                            <SvgChart config=latency_config />
+                                        </div>
+                                    }.into_any()
+                                },
+                                Err(e) => view! { <p class="error">{format!("Error: {e}")}</p> }.into_any(),
+                            }
+                        })
+                    }}
+                </Suspense>
+            </div>
 
             <div class="monitoring-section">
                 <h3>"Active Queries"</h3>

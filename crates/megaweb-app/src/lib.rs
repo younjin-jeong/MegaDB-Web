@@ -28,6 +28,7 @@ pub fn App() -> impl IntoView {
     state::k8s::provide_k8s_state();
     state::connection::provide_connection_state();
     state::settings::provide_settings_state();
+    state::toast::provide_toast_state();
 
     view! {
         <Stylesheet id="app-styles" href="/style/main.css" />
@@ -48,6 +49,8 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/settings") view=SettingsPage />
                     </Routes>
                 </main>
+                <components::toast::ToastContainer />
+                <components::keyboard::KeyboardManager />
             </div>
         </Router>
     }

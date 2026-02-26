@@ -59,4 +59,5 @@ pub mod keys {
     pub const SETTINGS: &str = "megaweb.settings";
     pub const QUERY_HISTORY: &str = "megaweb.queryHistory";
     pub const CONNECTIONS: &str = "megaweb.connections";
+    pub const SIDEBAR_COLLAPSED: &str = "megaweb.sidebarCollapsed";
 }

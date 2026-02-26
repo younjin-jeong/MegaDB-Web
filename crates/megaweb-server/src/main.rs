@@ -1,7 +1,8 @@
-use axum::Router;
+use axum::{extract::Extension, routing::get, Router};
 use leptos::config::LeptosOptions;
 use leptos::prelude::*;
 use leptos_axum::{generate_route_list, LeptosRoutes};
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
@@ -74,7 +75,16 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build the Axum router with static file serving + Leptos routes.
+    // Create WebSocket hub for real-time broadcast
+    let ws_hub = websocket::WsHub::new();
+
+    // Build proxy + WS routes as a standalone Router (no state needed).
+    let api_routes: Router<()> = proxy::router()
+        .route("/ws", get(websocket::ws_upgrade_handler))
+        .layer(Extension(Arc::clone(&ws_hub)))
+        .layer(Extension(app_config.clone()));
+
+    // Build the Leptos app router with static file serving.
     let app: Router<LeptosOptions> = Router::default();
     let app = app
         .nest_service("/js", ServeDir::new("js"))
@@ -84,7 +94,8 @@ async fn main() {
         })
         .fallback(leptos_axum::file_and_error_handler(shell))
         .layer(cors)
-        .with_state(leptos_options);
+        .with_state(leptos_options)
+        .merge(api_routes);
 
     let listener = tokio::net::TcpListener::bind(&app_config.bind_address)
         .await

@@ -1,5 +1,6 @@
 /// Application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AppConfig {
     /// Address to bind the web server (default: 0.0.0.0:3000)
     pub bind_address: String,

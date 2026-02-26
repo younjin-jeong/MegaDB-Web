@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  megaweb:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      MEGAWEB_BIND: "0.0.0.0:3000"
+      MEGADB_URL: "http://megadb:8080"
+      MEGADB_WS_URL: "ws://megadb:8080/ws"
+      PROMETHEUS_URL: "http://prometheus:9090"

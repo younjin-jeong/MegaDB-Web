@@ -1,6 +1,8 @@
 use leptos::prelude::*;
 use megaweb_types::query::{QueryHistoryEntry, QueryResult};
 
+const MAX_HISTORY: usize = 100;
+
 /// State for a single query tab.
 #[derive(Debug, Clone)]
 pub struct QueryTab {
@@ -21,6 +23,11 @@ impl QueryTab {
             is_running: false,
         }
     }
+
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
 }
 
 impl Default for QueryTab {
@@ -37,17 +44,19 @@ pub struct QueryState {
     pub history: Vec<QueryHistoryEntry>,
 }
 
-impl Default for QueryState {
-    fn default() -> Self {
+impl QueryState {
+    /// Load history from localStorage, create default tab.
+    pub fn load() -> Self {
+        let history =
+            crate::storage::get::<Vec<QueryHistoryEntry>>(crate::storage::keys::QUERY_HISTORY)
+                .unwrap_or_default();
         Self {
-            tabs: vec![QueryTab::new()],
+            tabs: vec![QueryTab::new().with_title("Query 1")],
             active_tab_index: 0,
-            history: vec![],
+            history,
         }
     }
-}
 
-impl QueryState {
     pub fn active_tab(&self) -> &QueryTab {
         &self.tabs[self.active_tab_index]
     }
@@ -57,7 +66,9 @@ impl QueryState {
     }
 
     pub fn add_tab(&mut self) {
-        self.tabs.push(QueryTab::new());
+        let num = self.tabs.len() + 1;
+        self.tabs
+            .push(QueryTab::new().with_title(format!("Query {num}")));
         self.active_tab_index = self.tabs.len() - 1;
     }
 
@@ -70,11 +81,26 @@ impl QueryState {
             self.active_tab_index = self.tabs.len() - 1;
         }
     }
+
+    /// Push a history entry, cap at MAX_HISTORY, and persist.
+    pub fn push_history(&mut self, entry: QueryHistoryEntry) {
+        self.history.push(entry);
+        if self.history.len() > MAX_HISTORY {
+            self.history.remove(0);
+        }
+        crate::storage::set(crate::storage::keys::QUERY_HISTORY, &self.history);
+    }
+}
+
+impl Default for QueryState {
+    fn default() -> Self {
+        Self::load()
+    }
 }
 
 /// Provide query state as a context.
 pub fn provide_query_state() {
-    let state = signal(QueryState::default());
+    let state = signal(QueryState::load());
     provide_context(state);
 }
 

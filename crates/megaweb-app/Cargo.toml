@@ -28,7 +28,12 @@ tokio = { workspace = true, optional = true }
 
 [features]
 default = []
-hydrate = ["leptos/hydrate"]
+hydrate = [
+    "leptos/hydrate",
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:web-sys",
+]
 ssr = [
     "leptos/ssr",
     "leptos_meta/ssr",

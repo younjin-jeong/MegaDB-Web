@@ -17,8 +17,9 @@ pub struct ConnectionConfig {
 }
 
 /// Current connection status.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum ConnectionStatus {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
@@ -38,11 +39,5 @@ impl Default for ConnectionConfig {
             k8s_namespace: Some("default".to_string()),
             created_at: chrono::Utc::now(),
         }
-    }
-}
-
-impl Default for ConnectionStatus {
-    fn default() -> Self {
-        Self::Disconnected
     }
 }

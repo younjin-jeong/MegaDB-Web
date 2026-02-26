@@ -1,16 +1,27 @@
 use leptos::prelude::*;
+use megaweb_types::toast::ToastLevel;
 
 use crate::state::settings::use_settings_state;
+use crate::state::toast::{push_toast, use_toast_write};
 
 /// Settings page with localStorage persistence.
 #[component]
 pub fn SettingsPage() -> impl IntoView {
     let (settings, set_settings) = use_settings_state();
+    let toast = use_toast_write();
+
+    // Track whether this is the initial render (skip toast on mount)
+    let (initialized, set_initialized) = signal(false);
 
     // Persist settings whenever they change
     Effect::new(move || {
         let s = settings.get();
         s.save();
+        if initialized.get_untracked() {
+            push_toast(toast, ToastLevel::Info, "Settings saved");
+        } else {
+            set_initialized.set(true);
+        }
     });
 
     view! {

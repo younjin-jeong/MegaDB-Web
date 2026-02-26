@@ -1,11 +1,14 @@
 use leptos::prelude::*;
 use megaweb_types::query::{QueryHistoryEntry, QueryResult};
+use megaweb_types::toast::ToastLevel;
 
 use crate::components::codemirror::CodeMirrorEditor;
 use crate::components::query_history::QueryHistoryPanel;
+use crate::components::query_plan::QueryPlanViewer;
 use crate::components::result_table::ResultTable;
 use crate::components::tab_bar::{Tab, TabBar};
 use crate::state::query::use_query_state;
+use crate::state::toast::{push_toast, use_toast_write};
 
 /// Server function to execute SQL against MegaDB.
 /// In Phase 1, returns mock data. Will proxy to MegaDB HTTP API later.
@@ -22,6 +25,23 @@ async fn mock_execute_query(sql: &str) -> QueryResult {
             row_count: 0,
             execution_time_ms: 0,
             error: Some("Empty query".to_string()),
+        };
+    }
+
+    // Mock EXPLAIN output
+    if sql.trim().to_uppercase().starts_with("EXPLAIN") {
+        return QueryResult {
+            columns: vec![QueryColumn {
+                name: "QUERY PLAN".into(),
+                data_type: "TEXT".into(),
+                nullable: false,
+            }],
+            rows: vec![vec![serde_json::json!(
+                "Seq Scan on cur_data  (cost=0.00..1234.56 rows=50000 width=120)\n  Filter: (region = 'us-east-1')"
+            )]],
+            row_count: 1,
+            execution_time_ms: 5,
+            error: None,
         };
     }
 
@@ -87,10 +107,11 @@ pub async fn execute_query(sql: String, _database: String) -> Result<QueryResult
     Ok(mock_execute_query(&sql).await)
 }
 
-/// SQL Editor page with multi-tab support and query history.
+/// SQL Editor page with multi-tab support, query history, and EXPLAIN visualization.
 #[component]
 pub fn SqlEditorPage() -> impl IntoView {
     let (query_state, set_query_state) = use_query_state();
+    let toast = use_toast_write();
 
     let (show_history, set_show_history) = signal(false);
 
@@ -113,6 +134,34 @@ pub fn SqlEditorPage() -> impl IntoView {
     let is_running = Signal::derive(move || query_state.get().active_tab().is_running);
     let sql_content = Signal::derive(move || query_state.get().active_tab().sql.clone());
 
+    // Track whether current result is an EXPLAIN plan
+    let is_explain = Signal::derive(move || {
+        query_state
+            .get()
+            .active_tab()
+            .sql
+            .trim()
+            .to_uppercase()
+            .starts_with("EXPLAIN")
+    });
+
+    // Extract plan text for EXPLAIN viewer
+    let plan_text = Signal::derive(move || {
+        if !is_explain.get() {
+            return None;
+        }
+        let result = query_state.get().active_tab().result.clone()?;
+        if result.error.is_some() {
+            return None;
+        }
+        // EXPLAIN result is typically a single column with the plan text
+        result
+            .rows
+            .first()
+            .and_then(|row| row.first())
+            .and_then(|v| v.as_str().map(String::from))
+    });
+
     // Execute query action
     let execute_action = Action::new(move |sql: &String| {
         let sql = sql.clone();
@@ -126,6 +175,22 @@ pub fn SqlEditorPage() -> impl IntoView {
             match result_value {
                 Ok(ref r) => {
                     let result = r.clone();
+                    if result.is_ok() {
+                        push_toast(
+                            toast,
+                            ToastLevel::Success,
+                            format!(
+                                "Query returned {} rows in {}ms",
+                                result.row_count, result.execution_time_ms
+                            ),
+                        );
+                    } else {
+                        push_toast(
+                            toast,
+                            ToastLevel::Error,
+                            result.error.clone().unwrap_or_default(),
+                        );
+                    }
                     let entry = QueryHistoryEntry {
                         id: uuid::Uuid::new_v4(),
                         sql,
@@ -143,6 +208,7 @@ pub fn SqlEditorPage() -> impl IntoView {
                 }
                 Err(ref e) => {
                     let err_msg = e.to_string();
+                    push_toast(toast, ToastLevel::Error, &err_msg);
                     let entry = QueryHistoryEntry {
                         id: uuid::Uuid::new_v4(),
                         sql,
@@ -238,7 +304,11 @@ pub fn SqlEditorPage() -> impl IntoView {
                 />
 
                 <div class="results-pane">
-                    <ResultTable result=result_signal />
+                    {move || if is_explain.get() && plan_text.get().is_some() {
+                        view! { <QueryPlanViewer plan_text=plan_text /> }.into_any()
+                    } else {
+                        view! { <ResultTable result=result_signal /> }.into_any()
+                    }}
                 </div>
             </div>
         </div>

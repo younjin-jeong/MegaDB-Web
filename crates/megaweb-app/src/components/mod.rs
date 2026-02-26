@@ -1,5 +1,7 @@
+pub mod auto_refresh;
 pub mod chart;
 pub mod codemirror;
+pub mod keyboard;
 pub mod modal;
 pub mod pod_card;
 pub mod query_history;

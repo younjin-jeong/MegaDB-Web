@@ -20,6 +20,7 @@ thiserror.workspace = true
 wasm-bindgen = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true }
+gloo-timers = { workspace = true, optional = true }
 
 # Server-only deps
 leptos_axum = { workspace = true, optional = true }
@@ -33,6 +34,7 @@ hydrate = [
     "dep:wasm-bindgen",
     "dep:js-sys",
     "dep:web-sys",
+    "dep:gloo-timers",
 ]
 ssr = [
     "leptos/ssr",

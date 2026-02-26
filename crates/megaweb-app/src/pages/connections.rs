@@ -1,12 +1,15 @@
 use leptos::prelude::*;
 use megaweb_types::connection::ConnectionConfig;
+use megaweb_types::toast::ToastLevel;
 
 use crate::state::connection::use_connection_state;
+use crate::state::toast::{push_toast, use_toast_write};
 
 /// Connection Manager page with full CRUD.
 #[component]
 pub fn ConnectionsPage() -> impl IntoView {
     let (conn_state, set_conn_state) = use_connection_state();
+    let toast = use_toast_write();
 
     // Form visibility and data
     let (show_form, set_show_form) = signal(false);
@@ -83,8 +86,10 @@ pub fn ConnectionsPage() -> impl IntoView {
 
         if form_id.get().is_some() {
             set_conn_state.update(|s| s.update_connection(config));
+            push_toast(toast, ToastLevel::Success, "Connection updated");
         } else {
             set_conn_state.update(|s| s.add_connection(config));
+            push_toast(toast, ToastLevel::Success, "Connection added");
         }
         set_show_form.set(false);
     };
@@ -175,6 +180,7 @@ pub fn ConnectionsPage() -> impl IntoView {
                                         on:click=move |_| {
                                             set_conn_state.update(|s| s.remove_connection(id));
                                             set_confirm_delete.set(None);
+                                            push_toast(toast, ToastLevel::Warning, "Connection deleted");
                                         }
                                     >
                                         "Delete"

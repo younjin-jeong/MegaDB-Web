@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use megaweb_types::k8s::*;
 
+use crate::components::auto_refresh::{AutoRefreshControl, RefreshInterval};
 use crate::components::pod_card::PodCard;
 use crate::components::scaling_panel::ScalingPanel;
 use crate::components::storage_panel::StoragePanel;
@@ -86,11 +87,22 @@ pub async fn scale_cluster(replicas: i32) -> Result<String, ServerFnError> {
 /// Kubernetes Dashboard page.
 #[component]
 pub fn K8sDashboardPage() -> impl IntoView {
-    let cluster = Resource::new(|| (), |_| get_cluster_status());
+    let (refresh_counter, set_refresh_counter) = signal(0u32);
+    let cluster = Resource::new(move || refresh_counter.get(), |_| get_cluster_status());
+
+    let on_refresh = Callback::new(move |_: ()| {
+        set_refresh_counter.update(|c| *c += 1);
+    });
 
     view! {
         <div class="k8s-dashboard-page">
-            <h2>"Kubernetes Dashboard"</h2>
+            <div class="k8s-dashboard-header">
+                <h2>"Kubernetes Dashboard"</h2>
+                <AutoRefreshControl
+                    initial_interval=RefreshInterval::Off
+                    on_refresh=on_refresh
+                />
+            </div>
 
             <Suspense fallback=|| view! { <p>"Loading cluster status..."</p> }>
                 {move || {

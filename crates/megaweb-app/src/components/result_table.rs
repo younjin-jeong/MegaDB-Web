@@ -1,9 +1,14 @@
 use leptos::prelude::*;
 use megaweb_types::query::QueryResult;
+use megaweb_types::toast::ToastLevel;
+
+use crate::state::toast::{push_toast, use_toast_write};
 
 /// Result table for query output with CSV/JSON export.
 #[component]
 pub fn ResultTable(result: Signal<Option<QueryResult>>) -> impl IntoView {
+    let toast = use_toast_write();
+
     view! {
         <div class="result-table-container">
             {move || match result.get() {
@@ -33,14 +38,20 @@ pub fn ResultTable(result: Signal<Option<QueryResult>>) -> impl IntoView {
                                     <button
                                         class="btn btn-sm"
                                         title="Export CSV"
-                                        on:click=move |_| export_csv(&r_csv)
+                                        on:click=move |_| {
+                                            export_csv(&r_csv);
+                                            push_toast(toast, ToastLevel::Success, "Exported as CSV");
+                                        }
                                     >
                                         "CSV"
                                     </button>
                                     <button
                                         class="btn btn-sm"
                                         title="Export JSON"
-                                        on:click=move |_| export_json(&r_json)
+                                        on:click=move |_| {
+                                            export_json(&r_json);
+                                            push_toast(toast, ToastLevel::Success, "Exported as JSON");
+                                        }
                                     >
                                         "JSON"
                                     </button>

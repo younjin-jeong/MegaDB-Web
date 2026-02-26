@@ -1,0 +1,39 @@
+[package]
+name = "megaweb-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Leptos application for MegaDB Web Client"
+
+[dependencies]
+megaweb-types.workspace = true
+leptos.workspace = true
+leptos_meta.workspace = true
+leptos_router.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+# WASM-only deps
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true }
+
+# Server-only deps
+leptos_axum = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+hydrate = ["leptos/hydrate"]
+ssr = [
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+    "dep:leptos_axum",
+    "dep:reqwest",
+    "dep:tokio",
+]
